@@ -1,0 +1,30 @@
+{
+  "money": 20,
+  "energy": 96.99999999999847,
+  "max_energy": 100,
+  "debt": 10000,
+  "debt_paid": 0,
+  "weapon": false,
+  "weapon_damage": 0,
+  "weapon_name": "Нет",
+  "armor": 0,
+  "speed_boost": 0,
+  "monsters_defeated": 0,
+  "location": "Главная площадь",
+  "story_index": 9,
+  "story_triggers": [],
+  "undertale": false,
+  "achievements": [
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+  ],
+  "night": true
+}
