@@ -35,6 +35,9 @@ def save_game(bob, loc_name, story):
             "debt_paid":bob.debt_paid,"weapon":bob.weapon,"weapon_damage":bob.weapon_damage,
             "weapon_name":bob.weapon_name,"armor":bob.armor,"speed_boost":bob.speed_boost,
             "monsters_defeated":bob.monsters_defeated,"location":loc_name,
+            "weapon_durability":bob.weapon_durability,"weapon_max_durability":bob.weapon_max_durability,
+            "weapon_range":bob.weapon_range,"ammo":bob.ammo,"ammo_type":bob.ammo_type,
+            "needs_ammo":bob.needs_ammo,
             "story_index":story.mi,"story_triggers":list(story.st),
             "undertale":story.undertale_found,"achievements":[a.unlocked for a in achievements.achievements],
             "night":night_system.is_night}
@@ -121,10 +124,17 @@ SHOP_ITEMS=[
     Item("Хлеб","food",5,"+15 энергии",{'energy':15}), Item("Сыр","food",10,"+30 энергии",{'energy':30}),
     Item("Пирог","food",20,"+60 энергии",{'energy':60}), Item("Эликсир","potion",35,"+100 энергии",{'energy':100}),
     Item("Зелье силы","potion",40,"+20 макс",{'max_energy':20}), Item("Зелье скорости","potion",45,"+1 скорости",{'speed':1}),
-    Item("Газонокосилка","weapon",50,"Урон:1",{'damage':1}), Item("Меч-траворез","weapon",150,"Урон:2",{'damage':2}),
-    Item("Огнемёт","weapon",400,"Урон:3",{'damage':3}), Item("Бластер","weapon",800,"Урон:5",{'damage':5}),
-    Item("Гречневая пушка","weapon",1500,"Урон:8",{'damage':8}), Item("Кожаная куртка","armor",60,"Защита:10%",{'defense':10}),
-    Item("Кольчуга","armor",200,"Защита:25%",{'defense':25}), Item("Гречневый панцирь","armor",500,"Защита:50%",{'defense':50})]
+    Item("Газонокосилка","weapon",50,"Урон:1 Даль:75 Проч:25",{'damage':1,'range':75,'durability':25}),
+    Item("Меч-траворез","weapon",150,"Урон:2 Даль:80 Проч:30",{'damage':2,'range':80,'durability':30}),
+    Item("Огнемёт","weapon",400,"Урон:3 Даль:175 Проч:35",{'damage':3,'range':175,'durability':35,'needs_ammo':True,'ammo_type':'Горючее'}),
+    Item("Бластер","weapon",800,"Урон:5 Даль:250 Проч:40",{'damage':5,'range':250,'durability':40,'needs_ammo':True,'ammo_type':'Плазма'}),
+    Item("Гречневая пушка","weapon",1500,"Урон:8 Даль:300 Проч:50",{'damage':8,'range':300,'durability':50,'needs_ammo':True,'ammo_type':'Гречка'}),
+    Item("Горючее","ammo",50,"Патроны для Огнемёта (35)",{'weapon':'Огнемёт','ammo':35}),
+    Item("Плазма","ammo",100,"Патроны для Бластера (40)",{'weapon':'Бластер','ammo':40}),
+    Item("Гречка-патроны","ammo",200,"Патроны для Пушки (50)",{'weapon':'Гречневая пушка','ammo':50}),
+    Item("Кожаная куртка","armor",60,"Защита:10%",{'defense':10}),
+    Item("Кольчуга","armor",200,"Защита:25%",{'defense':25}),
+    Item("Гречневый панцирь","armor",500,"Защита:50%",{'defense':50})]
 
 CRAFT_RECIPES=[
     Item("Зелье здоровья","potion",0,"+50 энергии",{'energy':50},{'flower':5,'mushroom':2}),
@@ -308,7 +318,23 @@ class ShopWindow:
                 if'max_energy'in item.effect: bob.max_energy+=item.effect['max_energy']
                 if'speed'in item.effect: bob.speed_boost+=item.effect['speed']; bob.speed=4+bob.speed_boost
                 self.msg=f"Куплено: {item.name}!"
-            elif item.type=='weapon': bob.weapon=True; bob.weapon_damage=item.effect.get('damage',1); bob.weapon_name=item.name; self.msg=f"Куплено: {item.name}!"
+            elif item.type=='weapon':
+                bob.weapon=True; bob.weapon_damage=item.effect.get('damage',1)
+                bob.weapon_name=item.name; bob.weapon_durability=item.effect.get('durability',25)
+                bob.weapon_max_durability=item.effect.get('durability',25)
+                bob.weapon_range=item.effect.get('range',55)
+                bob.needs_ammo=item.effect.get('needs_ammo',False)
+                bob.ammo_type=item.effect.get('ammo_type','')
+                if bob.needs_ammo: bob.ammo=0
+                self.msg=f"Куплено: {item.name}!"
+            elif item.type=='ammo':
+                if bob.weapon and bob.needs_ammo:
+                    weapon_match=item.effect.get('weapon','')
+                    if bob.weapon_name==weapon_match or bob.ammo_type==weapon_match:
+                        bob.ammo+=item.effect.get('ammo',0)
+                        self.msg=f"Куплено: {item.name}! Патронов: {bob.ammo}"
+                    else: self.msg=f"Не подходит! Нужно: {bob.ammo_type}"; bob.money+=item.price; self.mt=60; return False
+                else: self.msg="Нет оружия или не нужны патроны!"; bob.money+=item.price; self.mt=60; return False
             elif item.type=='armor': bob.armor=item.effect.get('defense',0); self.msg=f"Куплено: {item.name}!"
             self.mt=120; return True
         else: self.msg="Недостаточно денег!"; self.mt=60; return False
@@ -337,7 +363,21 @@ class ShopWindow:
         yo=wy+60
         for i,item in enumerate(items):
             if i==self.sel: pygame.draw.rect(s,(60,60,60),(wx+20,yo+i*28-2,ww-40,26),border_radius=5)
-            s.blit(get_text(item.name,small_font,WHITE),(wx+30,yo+i*28))
+            icon=""
+            if item.type=="weapon":
+                if "Газонокосилка" in item.name: icon="🪚"
+                elif "Меч" in item.name: icon="⚔️"
+                elif "Огнемёт" in item.name: icon="🔥"
+                elif "Бластер" in item.name: icon="🔫"
+                elif "Пушка" in item.name: icon="💥"
+            elif item.type=="ammo":
+                if "Горючее" in item.name: icon="🛢️"
+                elif "Плазма" in item.name: icon="🔮"
+                elif "Гречка" in item.name: icon="🌾"
+            elif item.type=="food": icon="🍞"
+            elif item.type=="potion": icon="🧪"
+            elif item.type=="armor": icon="🛡️"
+            s.blit(get_text(f"{icon} {item.name}",small_font,WHITE),(wx+30,yo+i*28))
             if self.tab==0: s.blit(get_text(f"{item.desc} - {item.price} монет",tiny_font,GRAY),(wx+250,yo+i*28+3))
             else:
                 rc=" + ".join([f"{v}x {k}" for k,v in item.recipe.items()])
@@ -359,16 +399,42 @@ class InventoryWindow:
         pygame.draw.rect(s,(40,40,40),(wx,wy,ww,wh),border_radius=15); pygame.draw.rect(s,GOLD,(wx,wy,ww,wh),4,border_radius=15)
         s.blit(get_text("ИНВЕНТАРЬ",big_font,YELLOW),(wx+200,wy+10))
         st=[f"Деньги: {bob.money}",f"Энергия: {int(bob.energy)}/{bob.max_energy}",
-            f"Оружие: {bob.weapon_name} (урон:{bob.weapon_damage})",f"Защита: {bob.armor}%",
-            f"Скорость: {bob.speed}",f"Убито: {bob.monsters_defeated}",
-            f"Долг: {bob.debt-bob.debt_paid}/{bob.debt}",
+            f"Оружие: {bob.weapon_name} (урон:{bob.weapon_damage})",f"Дальность: {bob.weapon_range}",
+            f"Прочность: {bob.weapon_durability}/{bob.weapon_max_durability}",
+            f"Патроны: {bob.ammo if bob.needs_ammo else 'не нужны'}",
+            f"Защита: {bob.armor}%",f"Скорость: {bob.speed}",
+            f"Убито: {bob.monsters_defeated}",f"Долг: {bob.debt-bob.debt_paid}/{bob.debt}",
             f"Q-щит({max(0,int(bob.shield_cd/60))}с) R-файрбол({max(0,int(bob.fire_cd/60))}с) H-хил({max(0,int(bob.heal_cd/60))}с)"]
         for i,st in enumerate(st): s.blit(get_text(st,font,WHITE),(wx+30,wy+60+i*30))
-        s.blit(get_text("Материалы:",font,YELLOW),(wx+30,wy+310))
+        s.blit(get_text("Материалы:",font,YELLOW),(wx+30,wy+400))
         ms=[f"Цветы:{bob.materials.get('flower',0)}",f"Жуки:{bob.materials.get('bug',0)}",
             f"Грибы:{bob.materials.get('mushroom',0)}",f"Золото:{bob.materials.get('golden_grain',0)}"]
-        for i,m in enumerate(ms): s.blit(get_text(m,small_font,WHITE),(wx+30+i*140,wy+340))
+        for i,m in enumerate(ms): s.blit(get_text(m,small_font,WHITE),(wx+30+i*140,wy+430))
         s.blit(get_text("Нажми I чтобы закрыть",small_font,WHITE),(wx+220,wy+wh-30))
+
+class HelpWindow:
+    def __init__(self): self.active=False
+    def open(self): self.active=True
+    def close(self): self.active=False
+    def draw(self,s):
+        if not self.active: return
+        o=pygame.Surface((WIDTH,HEIGHT)); o.set_alpha(190); o.fill(BLACK); s.blit(o,(0,0))
+        ww,wh=750,500; wx=WIDTH//2-ww//2; wy=HEIGHT//2-wh//2
+        pygame.draw.rect(s,(30,30,50),(wx,wy,ww,wh),border_radius=15)
+        pygame.draw.rect(s,GOLD,(wx,wy,ww,wh),4,border_radius=15)
+        s.blit(get_text("ИНСТРУКЦИЯ",big_font,YELLOW),(wx+250,wy+15))
+        lines=["Цель: выплатить кредит 10000 монет Мистеру Грече!","",
+               "УПРАВЛЕНИЕ:","  WASD - движение","  E - взаимодействие / атака",
+               "  SPACE - выплатить кредит (50 монет)","  Q - щит (3 сек, кулдаун 5 сек)",
+               "  R - фаербол (урон всем рядом)","  H - лечение (+50 энергии)",
+               "  I - инвентарь","  F1 - эта инструкция","  F5 - сохранить игру","  ESC - выход","",
+               "ОРУЖИЕ: прочность, дальность, патроны, кулдаун","  Бластер - самый быстрый! КД 0.25с","",
+               "ЗДАНИЯ: Дом, Ресторан, Магазин, Кузница, Банк,","  Библиотека, Таверна, Склад",
+               "  Ресторан: кулдаун 5 сек между работами","",
+               "ПОРТАЛЫ (справа): 4 локации + секретная","  Мобы респавнятся при перезаходе в локацию!"]
+        for i,line in enumerate(lines):
+            if line: s.blit(get_text(line,small_font,WHITE),(wx+30,wy+60+i*22))
+        s.blit(get_text("Нажми F1 чтобы закрыть",font,GOLD),(wx+250,wy+wh-35))
 
 class GameOverMenu:
     def __init__(self): self.active=False; self.sel=0
@@ -396,7 +462,7 @@ class TraderNPC:
     def update(self,loc):
         if loc!="main": self.active=False; return
         self.st-=1
-        if self.st<=0 and not self.active: self.active=True; self.x=random.randint(300,1300); self.y=random.randint(int(HEIGHT*0.3)+50,HEIGHT-250); self.r.x=self.x; self.r.y=self.y; self.timer=600
+        if self.st<=0 and not self.active: self.active=True; self.x=random.randint(300,1300); self.y=random.randint(int(HEIGHT*0.3)+50,HEIGHT-200); self.r.x=self.x; self.r.y=self.y; self.timer=600
         if self.active: self.timer-=1
         if self.timer<=0: self.active=False; self.st=random.randint(600,1800)
     def draw(self,s):
@@ -419,6 +485,9 @@ class Bob:
         self.weapon_name="Нет"; self.armor=0; self.ac=0; self.blink=random.randint(60,180); self.moving=False
         self.materials={'flower':0,'bug':0,'mushroom':0,'golden_grain':0}
         self.shield=False; self.shield_timer=0; self.shield_cd=0; self.fire_cd=0; self.heal_cd=0
+        self.weapon_durability=0; self.weapon_max_durability=0; self.weapon_range=55
+        self.needs_ammo=False; self.ammo=0; self.ammo_type=""
+        self.restaurant_cooldown=0
     def move(self,keys):
         dx,dy=0,0; self.moving=False
         if keys[pygame.K_LEFT] or keys[pygame.K_a]: dx=-self.speed; self.dir="left"; self.moving=True
@@ -426,7 +495,7 @@ class Bob:
         if keys[pygame.K_UP] or keys[pygame.K_w]: dy=-self.speed; self.moving=True
         if keys[pygame.K_DOWN] or keys[pygame.K_s]: dy=self.speed; self.moving=True
         self.r.x+=dx; self.r.y+=dy
-        min_y=int(HEIGHT*0.30); max_y=HEIGHT-180
+        min_y=int(HEIGHT*0.30); max_y=HEIGHT-130
         self.r.x=max(0,min(WIDTH-self.r.width,self.r.x)); self.r.y=max(min_y,min(max_y-self.r.height,self.r.y))
         if self.moving: self.energy=max(0,self.energy-0.01); self.at+=0.15
         else: self.at=0
@@ -462,8 +531,19 @@ class Bob:
             pygame.draw.circle(sh,(100,200,255,sa),(20,20),18); s.blit(sh,(cx-20,cy-25+bb))
         if self.weapon:
             wx=cx-12 if self.dir=="left" else cx+12; wy=cy-5+bb
-            wc=GRAY if self.weapon_damage<=2 else (GOLD if self.weapon_damage<=5 else RED)
-            pygame.draw.rect(s,wc,(wx-2,wy-8,4,16)); pygame.draw.rect(s,RED,(wx-5,wy-10,10,5))
+            if "Газонокосилка" in self.weapon_name:
+                pygame.draw.rect(s,GRAY,(wx-3,wy-10,6,18)); pygame.draw.rect(s,RED,(wx-6,wy-12,12,6)); pygame.draw.circle(s,GREEN,(wx,wy-5),3)
+            elif "Меч" in self.weapon_name:
+                pygame.draw.rect(s,(180,180,200),(wx-1,wy-14,3,22)); pygame.draw.rect(s,GOLD,(wx-3,wy-16,7,6)); pygame.draw.rect(s,BROWN,(wx-2,wy-10,5,6))
+            elif "Огнемёт" in self.weapon_name:
+                pygame.draw.rect(s,RED,(wx-4,wy-10,8,20)); pygame.draw.rect(s,ORANGE,(wx-2,wy-12,4,24)); pygame.draw.circle(s,YELLOW,(wx,wy-12),3)
+            elif "Бластер" in self.weapon_name:
+                pygame.draw.rect(s,(100,100,200),(wx-3,wy-12,6,20)); pygame.draw.rect(s,CYAN,(wx-1,wy-14,4,6)); pygame.draw.circle(s,WHITE,(wx,wy-14),2)
+            elif "Пушка" in self.weapon_name or "Гречневая" in self.weapon_name:
+                pygame.draw.rect(s,(150,100,50),(wx-5,wy-12,10,22)); pygame.draw.rect(s,GOLD,(wx-3,wy-14,6,8)); pygame.draw.circle(s,RED,(wx,wy-4),2)
+            else:
+                wc=GRAY if self.weapon_damage<=2 else (GOLD if self.weapon_damage<=5 else RED)
+                pygame.draw.rect(s,wc,(wx-2,wy-8,4,16)); pygame.draw.rect(s,RED,(wx-5,wy-10,10,5))
     def use_ability(self,ability,monsters):
         if ability=="fireball" and self.fire_cd<=0:
             self.fire_cd=180
@@ -485,7 +565,12 @@ class Bob:
         self.action_text=f"+{item.val} монет!"; self.action_timer=60
     def interact(self,b):
         if b.name=="Ресторан":
-            if self.energy>=30: self.energy-=30; tips=random.randint(20,50); self.money+=tips; self.action_text=f"+{tips} монет"; self.action_timer=90
+            if self.restaurant_cooldown>0:
+                self.action_text=f"Подожди {int(self.restaurant_cooldown/60)+1} сек"; self.action_timer=30; return
+            if self.energy>=30:
+                self.energy-=30; tips=random.randint(20,50); self.money+=tips
+                self.restaurant_cooldown=300
+                self.action_text=f"+{tips} монет"; self.action_timer=90
             else: self.action_text="Нужно 30+ энергии"; self.action_timer=60
         elif b.name=="Дом":
             if self.energy<self.max_energy: self.energy=self.max_energy; self.action_text="Энергия восстановлена!"; self.action_timer=60
@@ -494,6 +579,7 @@ class Bob:
             if self.weapon and self.money>=200:
                 self.money-=200; self.weapon_damage+=1
                 self.weapon_name=f"{self.weapon_name}+"
+                self.weapon_max_durability+=5; self.weapon_durability=self.weapon_max_durability
                 self.action_text=f"Оружие улучшено! Урон: {self.weapon_damage}"; self.action_timer=90
             elif self.armor>0 and self.money>=150:
                 self.money-=150; self.armor=min(80,self.armor+5)
@@ -524,7 +610,9 @@ class Bob:
             self.action_text=f"Нашёл {bonus} цветков на складе!"; self.action_timer=60
     def pay_debt(self):
         if self.money>=50:
-            pay=min(50,self.debt-self.debt_paid); self.money-=pay; self.debt_paid+=pay
+            pay=min(50, max(0, self.debt-self.debt_paid))
+            if pay<=0: self.action_text="Кредит уже выплачен!"; self.action_timer=60; return
+            self.money-=pay; self.debt_paid+=pay
             if self.debt_paid>=self.debt: self.portal_unlocked=True; self.action_text="КРЕДИТ ВЫПЛАЧЕН!"; particles.emit(self.r.centerx,self.r.centery,GOLD,30,(-6,6),40,6)
             else: self.action_text=f"Выплачено {pay}. Осталось: {self.debt-self.debt_paid}"
             self.action_timer=120
@@ -532,10 +620,24 @@ class Bob:
     def attack(self,m):
         if self.ac>0: return False
         if self.weapon:
-            if math.hypot(self.r.centerx-m.x,self.r.centery-m.y)<55:
-                self.ac=25
+            if self.needs_ammo and self.ammo<=0:
+                self.action_text="Нет патронов!"; self.action_timer=45; return False
+            dist=math.hypot(self.r.centerx-m.x,self.r.centery-m.y)
+            if dist<self.weapon_range:
+                if "Газонокосилка" in self.weapon_name: self.ac=30
+                elif "Меч" in self.weapon_name: self.ac=25
+                elif "Огнемёт" in self.weapon_name: self.ac=35
+                elif "Бластер" in self.weapon_name: self.ac=15
+                elif "Пушка" in self.weapon_name: self.ac=40
+                else: self.ac=25
+                if self.needs_ammo: self.ammo-=1
+                self.weapon_durability-=1
+                if self.weapon_durability<=0:
+                    self.weapon=False; self.weapon_damage=0; self.weapon_name="Сломано!"
+                    self.action_text="Оружие сломалось!"; self.action_timer=90; return False
                 if m.hit(self.weapon_damage): self.money+=m.sc; self.monsters_defeated+=1; self.action_text=f"Побеждён {m.name}!"; self.action_timer=90; return True
                 else: self.action_text=f"Попадание!"; self.action_timer=45
+            else: self.action_text="Слишком далеко!"; self.action_timer=30
         return False
     def update(self):
         if self.action_timer>0: self.action_timer-=1
@@ -544,6 +646,7 @@ class Bob:
         if self.shield_cd>0: self.shield_cd-=1
         if self.fire_cd>0: self.fire_cd-=1
         if self.heal_cd>0: self.heal_cd-=1
+        if self.restaurant_cooldown>0: self.restaurant_cooldown-=1
         if self.shield: self.shield_timer-=1
         if self.shield_timer<=0: self.shield=False
 
@@ -628,8 +731,9 @@ class FinalPortal:
 
 class Location:
     def __init__(self,name,bg):
-        self.name=name; self.bg=bg; self.buildings=[]; self.zones=[]; self.monsters=[]; self.portals=[]
-        self.at=0; self.undertale=False
+        self.name=name; self.bg=bg; self.buildings=[]; self.zones=[]; self.monsters=[]
+        self.portals=[]; self.at=0; self.undertale=False
+        self.monster_spawns=[]
         random.seed(hash(name)%10000)
         self.bushes=[]
         for i in range(12):
@@ -643,8 +747,12 @@ class Location:
         random.seed()
     def add_b(self,b): self.buildings.append(b)
     def add_z(self,z): self.zones.append(z)
-    def add_m(self,m): self.monsters.append(m)
     def add_p(self,p): self.portals.append(p)
+    def add_monster_spawn(self,monster_type,x,y,patrol_radius=100):
+        self.monster_spawns.append((monster_type,x,y,patrol_radius))
+    def respawn_monsters(self):
+        self.monsters=[]
+        for m_type,x,y,pr in self.monster_spawns: self.monsters.append(Monster(x,y,m_type,pr))
     def draw_bg(self,s):
         self.at+=0.005; t=self.at
         s.fill((0,0,0))
@@ -698,27 +806,32 @@ def create_locations():
     ff=Location("Цветочное поле",(255,235,245))
     ff.add_z(CollectZone(200,so+20,500,250,"Цветы",PINK,10)); ff.add_z(CollectZone(800,so+20,500,250,"Редкие цветы",PINK,8))
     ff.add_p(LocationPortal(700,so+350,"main","На главную площадь",BLUE)); ff.add_p(LocationPortal(1400,so+150,"undertale_ruins","???",YELLOW))
-    ff.add_m(Monster(350,so+150,"slug",180)); ff.add_m(Monster(1000,so+150,"slug",180)); ff.add_m(Monster(700,so+300,"weed",130))
+    ff.add_monster_spawn("slug",350,so+150,180); ff.add_monster_spawn("slug",1000,so+150,180); ff.add_monster_spawn("weed",700,so+300,130)
+    ff.respawn_monsters()
     locs["flower_field"]=ff
     bf=Location("Жучиный лес",(230,245,230))
     bf.add_z(CollectZone(200,so+20,500,250,"Жуки",GREEN,8)); bf.add_z(CollectZone(800,so+20,500,250,"Лесные жуки",GREEN,7))
     bf.add_p(LocationPortal(700,so+350,"main","На главную площадь",BLUE))
-    bf.add_m(Monster(350,so+150,"beetle",200)); bf.add_m(Monster(950,so+200,"beetle",200)); bf.add_m(Monster(700,so+100,"slug",130))
+    bf.add_monster_spawn("beetle",350,so+150,200); bf.add_monster_spawn("beetle",950,so+200,200); bf.add_monster_spawn("slug",700,so+100,130)
+    bf.respawn_monsters()
     locs["bug_forest"]=bf
     mg=Location("Грибная поляна",(240,230,210))
     mg.add_z(CollectZone(200,so+20,500,250,"Грибы",ORANGE,7)); mg.add_z(CollectZone(800,so+20,500,250,"Тёмные грибы",ORANGE,6))
     mg.add_p(LocationPortal(700,so+350,"main","На главную площадь",BLUE))
-    mg.add_m(Monster(400,so+150,"weed",160)); mg.add_m(Monster(900,so+250,"weed",160)); mg.add_m(Monster(350,so+350,"slug",130)); mg.add_m(Monster(1000,so+80,"boss_cricket",220))
+    mg.add_monster_spawn("weed",400,so+150,160); mg.add_monster_spawn("weed",900,so+250,160); mg.add_monster_spawn("slug",350,so+350,130); mg.add_monster_spawn("boss_cricket",1000,so+80,220)
+    mg.respawn_monsters()
     locs["mushroom_glade"]=mg
     dv=Location("Тёмная долина",(50,45,60))
     dv.add_z(CollectZone(200,so+50,400,200,"Редкие руды",PURPLE,5)); dv.add_z(CollectZone(700,so+50,400,200,"Тёмные кристаллы",MAGENTA,4))
     dv.add_p(LocationPortal(700,so+350,"main","На главную площадь",BLUE))
-    dv.add_m(Monster(350,so+150,"mutant_grain",180)); dv.add_m(Monster(850,so+200,"mutant_grain",180)); dv.add_m(Monster(600,so+100,"boss_cricket",180)); dv.add_m(Monster(700,so+350,"grecha_demon",220))
+    dv.add_monster_spawn("mutant_grain",350,so+150,180); dv.add_monster_spawn("mutant_grain",850,so+200,180); dv.add_monster_spawn("boss_cricket",600,so+100,180); dv.add_monster_spawn("grecha_demon",700,so+350,220)
+    dv.respawn_monsters()
     locs["dark_valley"]=dv
     ur=Location("Руины (Undertale)",(30,20,40)); ur.undertale=True
     uz=CollectZone(200,so+30,500,300,"Золотые цветы",YELLOW,0)
     for _ in range(25): uz.add_special(Collectible(random.randint(250,650),random.randint(so+50,so+300),'undertale_flower'))
-    ur.add_z(uz); ur.add_m(Monster(800,so+150,"flowey",0)); ur.add_p(LocationPortal(700,so+380,"flower_field","Вернуться в поле",BLUE))
+    ur.add_z(uz); ur.add_monster_spawn("flowey",800,so+150,0); ur.respawn_monsters()
+    ur.add_p(LocationPortal(700,so+380,"flower_field","Вернуться в поле",BLUE))
     locs["undertale_ruins"]=ur
     return locs
 
@@ -740,8 +853,9 @@ def main():
     global locations
     locations=create_locations(); cl=locations["main"]
     so=int(HEIGHT*0.30)
-    bob=Bob(750,so+200); mr=MrGrecha(1400,so-20); fp=FinalPortal(1400,so+530)
-    story=StoryTeller(); sw=ShopWindow(); iw=InventoryWindow(); gom=GameOverMenu(); vm=VictoryMenu()
+    bob=Bob(750,so+200); mr=MrGrecha(1400,so-20); fp=FinalPortal(1400,so+470)
+    story=StoryTeller(); sw=ShopWindow(); iw=InventoryWindow(); hw=HelpWindow()
+    gom=GameOverMenu(); vm=VictoryMenu()
     sd=load_game()
     if sd:
         try:
@@ -751,6 +865,9 @@ def main():
             bob.weapon_name=sd.get("weapon_name","Нет"); bob.armor=sd.get("armor",0)
             bob.speed_boost=sd.get("speed_boost",0); bob.speed=4+bob.speed_boost
             bob.monsters_defeated=sd.get("monsters_defeated",0)
+            bob.weapon_durability=sd.get("weapon_durability",0); bob.weapon_max_durability=sd.get("weapon_max_durability",0)
+            bob.weapon_range=sd.get("weapon_range",55); bob.ammo=sd.get("ammo",0)
+            bob.ammo_type=sd.get("ammo_type",""); bob.needs_ammo=sd.get("needs_ammo",False)
             cl=locations.get(sd.get("location","main"),locations["main"])
             story.mi=sd.get("story_index",0); story.st=set(sd.get("story_triggers",[]))
             story.undertale_found=sd.get("undertale",False)
@@ -796,17 +913,20 @@ def main():
                         elif e.key==pygame.K_e: sw.close()
                     elif iw.active:
                         if e.key in[pygame.K_i,pygame.K_e]: iw.close()
+                    elif hw.active:
+                        if e.key==pygame.K_F1 or e.key==pygame.K_e: hw.close()
                     else:
                         if e.key==pygame.K_q: bob.use_ability("shield",cl.monsters)
                         elif e.key==pygame.K_r: bob.use_ability("fireball",cl.monsters)
                         elif e.key==pygame.K_h: bob.use_ability("heal",cl.monsters)
+                        elif e.key==pygame.K_F1: hw.open()
                         elif e.key==pygame.K_SPACE: bob.pay_debt()
                         elif e.key==pygame.K_e:
                             if trader.active and bob.r.colliderect(trader.r): bob.money+=100; bob.action_text="+100!"; bob.action_timer=60; trader.active=False; particles.emit(trader.x,trader.y,GOLD,15,(-3,3),20,4)
                             elif bob.r.colliderect(pygame.Rect(60,so+300,160,95)) and cl.name=="Главная площадь": sw.open()
                             else:
                                 for p in cl.portals:
-                                    if bob.r.colliderect(p.r): cl=locations[p.target]; bob.r.x=WIDTH//2; bob.r.y=so+200; story.show(f"Переход: {cl.name}",250); ta=255; tr=True; break
+                                    if bob.r.colliderect(p.r): cl=locations[p.target]; cl.respawn_monsters(); bob.r.x=WIDTH//2; bob.r.y=so+200; story.show(f"Переход: {cl.name}",250); ta=255; tr=True; break
                                 else:
                                     if bob.ac<=0:
                                         att=False
@@ -820,10 +940,10 @@ def main():
                                                 if bob.r.colliderect(b.r) and b.name in["Дом","Ресторан","Кузница","Банк","Библиотека","Таверна","Склад"]: bob.interact(b); break
                         elif e.key==pygame.K_i: iw.open()
                         elif e.key==pygame.K_F5: save_game(bob,cl.name,story); bob.action_text="Сохранено!"; bob.action_timer=60
-        if not go and not win and not sw.active and not iw.active and not gom.active and not vm.active:
+        if not go and not win and not sw.active and not iw.active and not gom.active and not vm.active and not hw.active:
             keys=pygame.key.get_pressed(); bob.move(keys)
             night_system.update(); trader.update(cl.name)
-            for m in cl.monsters: m.move(bob.r,(0,so,WIDTH,HEIGHT-180-so)); m.attack(bob)
+            for m in cl.monsters: m.move(bob.r,(0,so,WIDTH,HEIGHT-130-so)); m.attack(bob)
             for z in cl.zones:
                 for i in z.items:
                     if i.check(bob.r): bob.collect(i)
@@ -854,8 +974,8 @@ def main():
         tx=get_text(cl.name,big_font,BLACK if not cl.undertale else WHITE); r=tx.get_rect(center=(WIDTH//2,30))
         bc=WHITE if not cl.undertale else (50,30,60); pygame.draw.rect(screen,bc,r.inflate(25,12),border_radius=8)
         pygame.draw.rect(screen,GOLD if cl.undertale else BLACK,r.inflate(25,12),2,border_radius=8); screen.blit(tx,r)
-        story.draw(screen); sw.draw(screen,bob); iw.draw(screen,bob); achievements.draw(screen)
-        gom.draw(screen); vm.draw(screen); minimap.draw(screen,cl,bob)
+        story.draw(screen); sw.draw(screen,bob); iw.draw(screen,bob); hw.draw(screen)
+        achievements.draw(screen); gom.draw(screen); vm.draw(screen); minimap.draw(screen,cl,bob)
         screen.blit(get_text("🌙 Ночь" if night_system.is_night else "☀️ День",small_font,YELLOW if night_system.is_night else GOLD),(WIDTH-170,10))
         if not go and not win:
             panel=pygame.Rect(0,HEIGHT-80,WIDTH,80); pygame.draw.rect(screen,DARK_BG,panel); pygame.draw.rect(screen,WHITE,panel,2)
@@ -865,17 +985,18 @@ def main():
             elif dl<=6000: dc=ORANGE
             else: dc=WHITE
             for txt,col,pos in[(f"Долг:{dl}/{bob.debt}",dc,(15,HEIGHT-70)),(f"Монеты:{bob.money}",YELLOW,(15,HEIGHT-45)),
-                               (f"Энергия:{int(bob.energy)}/{bob.max_energy}",WHITE,(300,HEIGHT-58)),(f"Убито:{bob.monsters_defeated}",RED,(500,HEIGHT-58)),
+                               (f"Энергия:{int(bob.energy)}/{bob.max_energy}",WHITE,(300,HEIGHT-58)),(f"Прочность:{bob.weapon_durability}/{bob.weapon_max_durability}",CYAN,(500,HEIGHT-58)),
                                (f"Оружие:{bob.weapon_name}",GOLD if bob.weapon else GRAY,(700,HEIGHT-58)),(f"Защита:{bob.armor}%",BLUE if bob.armor>0 else GRAY,(920,HEIGHT-58))]:
                 screen.blit(get_text(txt,font,col),pos)
+            if bob.needs_ammo: screen.blit(get_text(f"Патроны:{bob.ammo}",font,ORANGE),(1120,HEIGHT-58))
             if bob.weapon:
                 if bob.ac>0: cdt=f"КД:{bob.ac/60:.1f}с"; cdc=GRAY
                 else: cdt="Готов!"; cdc=GREEN
             else: cdt="Нет оружия"; cdc=RED
-            screen.blit(get_text(cdt,font,cdc),(1120,HEIGHT-58))
+            screen.blit(get_text(cdt,font,cdc),(1350,HEIGHT-58))
             screen.blit(get_text(f"Q-щит:{max(0,int(bob.shield_cd/60))}с R-огонь:{max(0,int(bob.fire_cd/60))}с H-хил:{max(0,int(bob.heal_cd/60))}с",tiny_font,CYAN),(1120,HEIGHT-40))
             if bob.action_text: screen.blit(get_text(bob.action_text,font,ORANGE),(15,HEIGHT-20))
-            for i,h in enumerate(["WASD-ход|E-действие|I-инвентарь|SPACE-платить","Q-щит|R-фаербол|H-лечение|F5-сохранить"]): screen.blit(get_text(h,small_font,(200,200,200)),(WIDTH-500,HEIGHT-70+i*18))
+            for i,h in enumerate(["WASD-ход|E-действие|I-инвентарь|F1-помощь|SPACE-платить","Q-щит|R-фаербол|H-лечение|F5-сохранить"]): screen.blit(get_text(h,small_font,(200,200,200)),(WIDTH-500,HEIGHT-70+i*18))
         if tr: ts=pygame.Surface((WIDTH,HEIGHT)); ts.set_alpha(ta); ts.fill(BLACK); screen.blit(ts,(0,0))
         pygame.display.flip()
     pygame.quit(); sys.exit()
