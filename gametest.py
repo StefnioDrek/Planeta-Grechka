@@ -330,7 +330,8 @@ class ShopWindow:
             elif item.type=='ammo':
                 if bob.weapon and bob.needs_ammo:
                     weapon_match=item.effect.get('weapon','')
-                    if bob.weapon_name==weapon_match or bob.ammo_type==weapon_match:
+                    # Проверка совместимости: точное совпадение или частичное
+                    if bob.weapon_name==weapon_match or bob.ammo_type==weapon_match or weapon_match in bob.weapon_name or bob.ammo_type in weapon_match:
                         bob.ammo+=item.effect.get('ammo',0)
                         self.msg=f"Куплено: {item.name}! Патронов: {bob.ammo}"
                     else: self.msg=f"Не подходит! Нужно: {bob.ammo_type}"; bob.money+=item.price; self.mt=60; return False
@@ -609,9 +610,11 @@ class Bob:
             self.materials['flower']=self.materials.get('flower',0)+bonus
             self.action_text=f"Нашёл {bonus} цветков на складе!"; self.action_timer=60
     def pay_debt(self):
+        remaining = self.debt - self.debt_paid
+        if remaining <= 0:
+            self.action_text="Кредит уже выплачен!"; self.action_timer=60; return
         if self.money>=50:
-            pay=min(50, max(0, self.debt-self.debt_paid))
-            if pay<=0: self.action_text="Кредит уже выплачен!"; self.action_timer=60; return
+            pay=min(50, remaining)
             self.money-=pay; self.debt_paid+=pay
             if self.debt_paid>=self.debt: self.portal_unlocked=True; self.action_text="КРЕДИТ ВЫПЛАЧЕН!"; particles.emit(self.r.centerx,self.r.centery,GOLD,30,(-6,6),40,6)
             else: self.action_text=f"Выплачено {pay}. Осталось: {self.debt-self.debt_paid}"
@@ -959,7 +962,9 @@ def main():
             if tr: ta=max(0,ta-5)
             if ta==0: tr=False
             if bob.energy<=0: go=True; gom.show()
-            if bob.r.colliderect(fp.r) and bob.portal_unlocked and cl.name=="Главная площадь": win=True; vm.show()
+            if bob.r.colliderect(fp.r) and cl.name=="Главная площадь":
+                if bob.portal_unlocked: win=True; vm.show()
+                else: bob.action_text="Портал закрыт! Выплати кредит!"; bob.action_timer=60
         cl.draw_bg(screen)
         dark=night_system.get_darkness()
         if dark>0: ds=pygame.Surface((WIDTH,HEIGHT)); ds.set_alpha(dark); ds.fill((10,10,40)); screen.blit(ds,(0,0))
